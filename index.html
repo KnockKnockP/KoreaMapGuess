@@ -1,0 +1,216 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        <meta charset='utf-8'/>
+
+        <title>
+            Korea Map Guess
+        </title>
+
+        <link rel='stylesheet' href='style.css'>
+        <script type='text/javascript' src='//dapi.kakao.com/v2/maps/sdk.js?appkey=b60039415ec75bb9e563da272704f669'></script>
+
+        <script>
+            //Shamelessly stolen.
+            function getRandomNumber(min, max) {
+                return (Math.random() * (max - min) + min);
+            }
+
+            function sleep(ms) {
+                return new Promise(
+                    resolve => setTimeout(resolve, ms)
+                );
+            }
+
+            function measure(latitude1,
+                             longitude1,
+                             latitude2,
+                             longitude2){
+                const dLatitude = ((latitude2 * Math.PI / 180) - (latitude1 * Math.PI / 180)),
+                      dLongitude = ((longitude2 * Math.PI / 180) - (longitude1 * Math.PI / 180)),
+                      a = ((Math.sin(dLatitude / 2) * Math.sin(dLatitude / 2)) +
+                           (Math.cos(latitude1 * Math.PI / 180) * Math.cos(latitude2 * Math.PI / 180) * Math.sin(dLongitude / 2) * Math.sin(dLongitude / 2)));
+                return (6378.137 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+            }
+        </script>
+    </head>
+
+    <body>
+    <div id='controlPanel' style='position:absolute; top:0; left:0; width:100%; height:100%'>
+        <div id='map' style='width:20%; height:20%; z-index:1'></div>
+
+        <div style='position:relative; z-index:1'>
+            <div id='answerText'>
+                Good luck!
+            </div>
+
+            <div id='difficultyText'>
+                Difficulty: Easy
+            </div>
+
+            <button id='submitButton' onclick='submitAnswer()'>Submit answer</button>
+            <button id='easyButton' onclick='changeDifficulty("Easy")'>Easy</button>
+            <button id='mediumButton' onclick='changeDifficulty("Medium")'>Medium</button>
+            <button id='hardButton' onclick='changeDifficulty("Hard")'>Hard</button>
+        </div>
+    </div>
+    <script>
+        var mapInstance = null,
+            selectedPosition = null,
+            answerPosition = null;
+
+        function submitAnswer() {
+            const answerText = document.getElementById('answerText');
+
+            if (selectedPosition == null) {
+                answerText.innerText = "Please select a position by clicking on the map.";
+            }
+
+            const answerMarker = new kakao.maps.Marker({
+                position: answerPosition
+            });
+            answerMarker.setMap(mapInstance);
+
+            const killometersDifference = measure(selectedPosition.La,
+                                                  selectedPosition.Ma,
+                                                  answerPosition.La,
+                                                  selectedPosition.Ma);
+            answerText.innerText = `You are ${killometersDifference} killometers away from the starting point.`;
+            return;
+        }
+        </script>
+
+        <script>
+            const difficultyText = document.getElementById('difficultyText');
+            var difficulty = 'Easy';
+
+            function changeDifficulty(newDifficulty) {
+                difficulty = newDifficulty;
+                difficultyText.innerText = `Difficulty: ${difficulty}`;
+
+                exit = true;
+                panoId = null;
+                answerPosition = null;
+                setPanoId();
+                return;
+            }
+        </script>
+
+        <script>
+            const mapContainer = document.getElementById('map'),
+                mapOptions = {
+                center: new kakao.maps.LatLng(36.5, 128),
+                level: 14
+            };
+            mapInstance = new kakao.maps.Map(mapContainer, mapOptions);
+
+            const mapMarker = new kakao.maps.Marker({
+                position: new kakao.maps.LatLng(0, 0)
+            });
+            mapMarker.setMap(mapInstance);
+
+            kakao.maps.event.addListener(mapInstance, 'click', function(mouseEvent) {
+                selectedPosition = mouseEvent.latLng;
+                mapMarker.setPosition(selectedPosition);
+            });
+        </script>
+
+        <div id='roadview' style='width:100%; height:100%; z-index:0'></div>
+        <script>
+            function generatePosition() {
+                let minLatitude = 0,
+                    maxLatitude = 0,
+                    minLongitude = 0,
+                    maxLongitude = 0;
+
+                switch (difficulty) {
+                    default:
+                    case 'Easy':
+                        minLatitude = 36.814610;
+                        maxLatitude = 37.655218;
+                        minLongitude = 126.571648;
+                        maxLongitude = 127.322527;
+                        break;
+
+                    case 'Medium':
+                        minLatitude = 34.943784;
+                        maxLatitude = 36.814610;
+                        minLongitude = 126.571648;
+                        maxLongitude = 127.150976;
+                        break;
+
+                    case 'Hard':
+                        minLatitude =34.577897;
+                        maxLatitude =37.945222;
+                        minLongitude = 126.482257;
+                        maxLongitude =129.406354;
+                        break;
+                }
+
+                return new kakao.maps.LatLng(getRandomNumber(minLatitude, maxLatitude),
+                                             getRandomNumber(minLongitude, maxLongitude));
+            }
+
+            const roadviewContainer = document.getElementById('roadview'),
+                roadview = new kakao.maps.Roadview(roadviewContainer),
+                roadviewClient = new kakao.maps.RoadviewClient();
+            let roadviewPosition = null;
+
+            var panoId = null,
+                exit = false;
+
+            async function setPanoId() {
+                exit = false;
+                let loop = 0;
+                while (panoId == null) {
+                    ++loop;
+                    if (loop > 10) {
+                        throw new Error('Stack exceeded.');
+                    }
+
+                    roadviewPosition = generatePosition();
+
+                    roadviewClient.getNearestPanoId(roadviewPosition, 1000, function(panoIdResult) {
+                        panoId = panoIdResult;
+                        return;
+                    });
+
+                    await sleep(1000);
+                }
+
+                roadview.setPanoId(panoId, roadviewPosition);
+
+                while ((answerPosition == null) ||
+                       Number.isNaN(answerPosition.La)) {
+                    await sleep(1000);
+                    answerPosition = roadview.getPosition();
+                }
+            }
+
+            setPanoId().then(() => {
+                async function removeRoadText() {
+                    while (!exit) {
+                        let roadTexts = document.querySelectorAll('[id^="text_rtxt_"]');
+                        for (let i = 0; i < roadTexts.length; ++i) {
+                            const roadText = roadTexts[i],
+                                  roadTextInnerText = roadText.innerText;
+
+                            if ((roadTextInnerText == '북') ||
+                                (roadTextInnerText == '남')) {
+                                continue;
+                            }
+
+                            roadTexts[i].innerText = '';
+                        }
+
+                        await sleep(100);
+                    }
+                }
+
+                removeRoadText();
+                return;
+            });
+        </script>
+    </body>
+</html>
