@@ -277,6 +277,29 @@ function bindEvents() {
     });
 }
 
+function hideRoadviewStreetText() {
+    const keepText = new Set(["N", "S", "E", "W", "북", "남", "동", "서"]);
+
+    document.querySelectorAll("#roadview [id^='text_rtxt_']").forEach((label) => {
+        if (!keepText.has(label.textContent.trim())) {
+            label.textContent = "";
+        }
+    });
+}
+
+function startRoadviewTextScrubber() {
+    const observer = new MutationObserver(hideRoadviewStreetText);
+
+    observer.observe(elements.roadview, {
+        childList: true,
+        subtree: true,
+        characterData: true
+    });
+
+    window.setInterval(hideRoadviewStreetText, 500);
+    hideRoadviewStreetText();
+}
+
 function init() {
     elements.map = document.getElementById("map");
     elements.roadview = document.getElementById("roadview");
@@ -287,6 +310,7 @@ function init() {
     initMap();
     initRoadview();
     bindEvents();
+    startRoadviewTextScrubber();
     startRound();
 }
 
